@@ -562,6 +562,61 @@ module Cask
       yield artifacts, @tmpdir if block_given?
     end
 
+    sig { void }
+    def audit_rosetta
+      return unless online?
+      return if Homebrew::SimulateSystem.current_arch != :arm
+
+      odebug "Auditing Rosetta 2 requirement"
+
+      extract_artifacts do |artifacts, tmpdir|
+        is_container = artifacts.any? { |a| a.is_a?(Artifact::App) || a.is_a?(Artifact::Pkg) }
+
+        artifacts.filter { |a| a.is_a?(Artifact::App) || a.is_a?(Artifact::Binary) }
+                 .each do |artifact|
+          next if artifact.is_a?(Artifact::Binary) && is_container
+
+          path = tmpdir/artifact.source.relative_path_from(cask.staged_path)
+
+          result = case artifact
+          when Artifact::App
+            files = Dir[path/"Contents/MacOS/*"].select do |f|
+              File.executable?(f) && !File.directory?(f) && !f.end_with?(".dylib")
+            end
+            add_error "No binaries in App: #{artifact.source}", location: cask.url.location if files.empty?
+            system_command("lipo", args: ["-archs", files.first], print_stderr: false)
+          when Artifact::Binary
+            binary_path = path.to_s.gsub(cask.appdir, tmpdir)
+            system_command("lipo", args: ["-archs", binary_path], print_stderr: true)
+          else
+            add_error "Unknown artifact type: #{artifact.class}", location: cask.url.location
+          end
+
+          # binary stanza can contain shell scripts, so we just continue if lipo fails.
+          next unless result.success?
+
+          odebug result.merged_output
+
+          unless /arm64|x86_64/.match?(result.merged_output)
+            add_error "Artifacts architecture is no longer supported by macOS!",
+                      location: cask.url.location
+            next
+          end
+
+          supports_arm = result.merged_output.include?("arm64")
+          mentions_rosetta = cask.caveats.include?("requires Rosetta 2")
+
+          if supports_arm && mentions_rosetta
+            add_error "Artifacts does not require Rosetta 2 but the caveats say otherwise!",
+                      location: cask.url.location
+          elsif !supports_arm && !mentions_rosetta
+            add_error "Artifacts require Rosetta 2 but this is not indicated by the caveats!",
+                      location: cask.url.location
+          end
+        end
+      end
+    end
+
     sig { returns(T.any(NilClass, T::Boolean, Symbol)) }
     def audit_livecheck_version
       return unless online?
@@ -606,21 +661,33 @@ module Cask
       debug_messages = []
       debug_messages << "Plist #{plist_min_os}" if plist_min_os
       debug_messages << "Sparkle #{sparkle_min_os}" if sparkle_min_os
-      odebug "Minimum OS version: #{debug_messages.join(" | ")}" unless debug_messages.empty?
+      odebug "Detected minimum OS version: #{debug_messages.join(" | ")}" unless debug_messages.empty?
       min_os = [plist_min_os, sparkle_min_os].compact.max
 
       return if min_os.nil? || min_os <= HOMEBREW_MACOS_OLDEST_ALLOWED
 
-      cask_min_os = cask.depends_on.macos&.version
-      return if cask_min_os == min_os
+      cask_min_os = if cask.on_system_blocks_exist? && cask.on_system_block_min_os.present?
+        cask.on_system_block_min_os
+      else
+        cask.depends_on.macos&.minimum_version
+      end
+      odebug "Declared minimum OS version: #{cask_min_os&.to_sym}"
+      return if cask_min_os&.to_sym == min_os.to_sym
+      return if cask.on_system_blocks_exist? &&
+                OnSystem.arch_condition_met?(:arm) &&
+                cask_min_os < MacOSVersion.new("11")
 
-      min_os_symbol = if cask_min_os.present?
-        cask_min_os.to_sym.inspect
+      min_os_definition = if cask_min_os.present?
+        if cask.on_system_blocks_exist? && cask.on_system_block_min_os.present?
+          "a block with a minimum OS version of #{cask.on_system_block_min_os.inspect}"
+        else
+          cask_min_os.to_sym.inspect
+        end
       else
         "no minimum OS version"
       end
       add_error "Upstream defined #{min_os.to_sym.inspect} as the minimum OS version " \
-                "and the cask defined #{min_os_symbol}",
+                "and the cask declared #{min_os_definition}",
                 strict_only: true
     end
 
@@ -839,7 +906,8 @@ module Cask
 
       validate_url_for_https_availability(
         url, "livecheck URL",
-        check_content: true
+        check_content: true,
+        user_agents:   [:default, :browser]
       )
     end
 

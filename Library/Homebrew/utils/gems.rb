@@ -10,7 +10,7 @@ require "English"
 module Homebrew
   # Keep in sync with the `Gemfile.lock`'s BUNDLED WITH.
   # After updating this, run `brew vendor-gems --update=--bundler`.
-  HOMEBREW_BUNDLER_VERSION = "2.5.9"
+  HOMEBREW_BUNDLER_VERSION = "2.5.11"
 
   # Bump this whenever a committed vendored gem is later added to or exclusion removed from gitignore.
   # This will trigger it to reinstall properly if `brew install-bundler-gems` needs it.
@@ -299,7 +299,12 @@ module Homebrew
       end
 
       bundle_installed = if bundle_install_required
-        if system bundle, "install", out: :err
+        Process.wait(fork do
+          # Native build scripts fail if EUID != UID
+          Process::UID.change_privilege(Process.euid) if Process.euid != Process.uid
+          exec bundle, "install", out: :err
+        end)
+        if $CHILD_STATUS.success?
           true
         else
           message = <<~EOS

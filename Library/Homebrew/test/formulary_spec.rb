@@ -383,6 +383,7 @@ RSpec.describe Formulary do
         # avoid unnecessary network calls
         allow(Homebrew::API::Formula).to receive_messages(all_aliases: {}, all_renames: {})
         allow(CoreTap.instance).to receive(:tap_migrations).and_return({})
+        allow(CoreCaskTap.instance).to receive(:tap_migrations).and_return({})
 
         # don't try to load/fetch gcc/glibc
         allow(DevelopmentTools).to receive_messages(needs_libc_formula?: false, needs_compiler_formula?: false)
@@ -481,6 +482,51 @@ RSpec.describe Formulary do
         expect(formula.declared_deps.count).to eq 6
         expect(formula.deps.count).to eq 5
         expect(formula.deps.map(&:name).include?("uses_from_macos_dep")).to be true
+      end
+
+      context "with core tap migration renames" do
+        let(:foo_tap) { Tap.fetch("homebrew", "foo") }
+
+        before do
+          allow(Homebrew::API::Formula).to receive(:all_formulae).and_return formula_json_contents
+          foo_tap.path.mkpath
+        end
+
+        after do
+          FileUtils.rm_rf foo_tap.path
+        end
+
+        it "returns the core formula if the short name clashes with a tap migration rename" do
+          (foo_tap.path/"tap_migrations.json").write <<~JSON
+            { "#{formula_name}": "homebrew/core/#{formula_name}-v2" }
+          JSON
+
+          expect(described_class::FromNameLoader.try_new(formula_name))
+            .to be_a(described_class::FromNameLoader)
+            .and have_attributes(name: formula_name)
+        end
+
+        it "returns the tap migration rename by old formula_name" do
+          old_formula_name = "#{formula_name}-old"
+          (foo_tap.path/"tap_migrations.json").write <<~JSON
+            { "#{old_formula_name}": "homebrew/core/#{formula_name}" }
+          JSON
+
+          expect(described_class::FromNameLoader.try_new(old_formula_name))
+            .to be_a(described_class::FromAPILoader)
+            .and have_attributes(name: formula_name)
+        end
+
+        it "returns the tap migration rename by old full name" do
+          old_formula_name = "#{formula_name}-old"
+          (foo_tap.path/"tap_migrations.json").write <<~JSON
+            { "#{old_formula_name}": "homebrew/core/#{formula_name}" }
+          JSON
+
+          expect(described_class::FromTapLoader.try_new("#{foo_tap}/#{old_formula_name}"))
+            .to be_a(described_class::FromAPILoader)
+            .and have_attributes(name: formula_name)
+        end
       end
     end
   end
@@ -640,6 +686,45 @@ RSpec.describe Formulary do
           #     end.not_to output.to_stderr
           #   end
           # end
+        end
+
+        context "to a third-party tap" do
+          let(:old_tap) { Tap.fetch("another", "foo") }
+          let(:new_tap) { Tap.fetch("another", "bar") }
+          let(:formula_file) { new_tap.formula_dir/"#{token}.rb" }
+
+          before do
+            new_tap.formula_dir.mkpath
+            FileUtils.touch formula_file
+          end
+
+          after do
+            FileUtils.rm_rf Tap::TAP_DIRECTORY/"another"
+          end
+
+          # FIXME
+          # It would be preferable not to print a warning when installing with the short token
+          it "warns when loading the short token" do
+            expect do
+              described_class.loader_for(token)
+            end.to output(
+              a_string_including("Formula #{old_tap}/#{token} was renamed to #{new_tap}/#{token}.").once,
+            ).to_stderr
+          end
+
+          it "does not warn when loading the full token in the new tap" do
+            expect do
+              described_class.loader_for("#{new_tap}/#{token}")
+            end.not_to output.to_stderr
+          end
+
+          it "warns when loading the full token in the old tap" do
+            expect do
+              described_class.loader_for("#{old_tap}/#{token}")
+            end.to output(
+              a_string_including("Formula #{old_tap}/#{token} was renamed to #{new_tap}/#{token}.").once,
+            ).to_stderr
+          end
         end
       end
     end

@@ -29,8 +29,8 @@ Cask/Desc:
   Description: "Ensure that the desc stanza conforms to various content and style checks."
   Enabled: true
 
-Cask/HomepageUrlTrailingSlash:
-  Description: "Ensure that the homepage url has a slash after the domain name."
+Cask/HomepageUrlStyling:
+  Description: "Ensure that the homepage url has the correct format and styling."
   Enabled: true
 
 Cask/StanzaGrouping:
@@ -244,8 +244,6 @@ RSpec/MultipleMemoizedHelpers:
 
 RSpec/DescribedClassModuleWrapping:
   Enabled: true
-RSpec/FilePath:
-  SpecSuffixOnly: true
 # Annoying to have these autoremoved.
 RSpec/Focus:
   AutoCorrect: false
@@ -327,6 +325,11 @@ Style/Documentation:
     - "Taps/**/*"
     - "/**/{Formula,Casks}/**/*.rb"
     - "**/{Formula,Casks}/**/*.rb"
+    - "**/*.rbi"
+
+# This is impossible to fix if the line exceeds the maximum length.
+Style/EmptyMethod:
+  Exclude:
     - "**/*.rbi"
 
 # This is quite a large change, so don't enforce this yet for formulae.

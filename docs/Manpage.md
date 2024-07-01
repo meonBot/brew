@@ -1162,6 +1162,23 @@ evaluation of this command's output to your dotfiles (e.g. `~/.bash_profile` or
 The shell can be specified explicitly with a supported shell name parameter.
 Unknown shells will output POSIX exports.
 
+### `tab` \[`--installed-on-request`\] \[`--no-installed-on-request`\] *`formula`* \[...\]
+
+Edit tab information for installed formulae.
+
+This can be useful when you want to control whether an installed formula should
+be removed by `brew autoremove`. To prevent removal, mark the formula as
+installed on request; to allow removal, mark the formula as not installed on
+request.
+
+`--installed-on-request`
+
+: Mark *`formula`* as installed on request.
+
+`--no-installed-on-request`
+
+: Mark *`formula`* as not installed on request.
+
 ### `tap` \[*`options`*\] \[*`user`*`/`*`repo`*\] \[*`URL`*\]
 
 Tap a formula repository. If no arguments are provided, list all installed taps.
@@ -2170,6 +2187,11 @@ formula file at *`tap`*`/Formula/`*`formula`*`@`*`version`*`.rb`. If the tap is
 not installed yet, attempt to install/clone the tap before continuing. To
 extract a formula from a tap that is not `homebrew/core` use its fully-qualified
 form of *`user`*`/`*`repo`*`/`*`formula`*.
+
+`--git-revision`
+
+: Search for the specified *`version`* of *`formula`* starting at *`revision`*
+  instead of HEAD.
 
 `--version`
 
@@ -3546,8 +3568,8 @@ command execution e.g. `$(cat file)`.
 
 `HOMEBREW_BOOTSNAP`
 
-: If set, use Bootsnap to speed up repeated `brew` calls. A no-op when using
-  Homebrew's vendored, relocatable Ruby on macOS (as it doesn't work).
+: If set, use Bootsnap to speed up repeated `brew` calls. A no-op on Linux when
+  not using Homebrew's vendored, relocatable Ruby.
 
 `HOMEBREW_BOTTLE_DOMAIN`
 
@@ -4067,11 +4089,11 @@ Homebrew's Technical Steering Committee is Bo Anderson, FX Coudert, Michka
 Popoff, Mike McQuaid and Rylan Polster.
 
 Homebrew's maintainers are Alexander Bayandin, Bevan Kay, Bo Anderson, Branch
-Vincent, Caleb Xu, Carlo Cabrera, David Baumgold, Douglas Eichelberger, Dustin
-Rodrigues, Eric Knibbe, FX Coudert, Issy Long, Justin Krehel, Markus Reiter,
-Miccal Matthews, Michael Cho, Michka Popoff, Mike McQuaid, Nanda H Krishna,
-Patrick Linnane, Razvan Azamfirei, Rui Chen, Ruoyu Zhong, Rylan Polster, Sam
-Ford, Sean Molenaar, Thierry Moisan, Timothy Sutton and William Woodruff.
+Vincent, Caleb Xu, Carlo Cabrera, Douglas Eichelberger, Dustin Rodrigues, Eric
+Knibbe, FX Coudert, Issy Long, Justin Krehel, Markus Reiter, Miccal Matthews,
+Michael Cho, Michka Popoff, Mike McQuaid, Nanda H Krishna, Patrick Linnane,
+Razvan Azamfirei, Rui Chen, Ruoyu Zhong, Rylan Polster, Sam Ford, Sean Molenaar,
+Thierry Moisan, Timothy Sutton and William Woodruff.
 
 Former maintainers with significant contributions include Misty De Méo, Shaun
 Jackman, Vítor Galvão, Claudia Pellegrino, Seeker, Jan Viljanen, JCount,

@@ -22,6 +22,8 @@ module Homebrew
           a formula from a tap that is not `homebrew/core` use its fully-qualified form of
           <user>`/`<repo>`/`<formula>.
         EOS
+        flag   "--git-revision=",
+               description: "Search for the specified <version> of <formula> starting at <revision> instead of HEAD."
         flag   "--version=",
                description: "Extract the specified <version> of <formula> instead of the most recent."
         switch "-f", "--force",
@@ -49,6 +51,7 @@ module Homebrew
         destination_tap.install unless destination_tap.installed?
 
         repo = source_tap.path
+        start_rev = args.git_revision || "HEAD"
         pattern = if source_tap.core_tap?
           [source_tap.new_formula_path(name), repo/"Formula/#{name}.rb"].uniq
         else
@@ -64,7 +67,7 @@ module Homebrew
           test_formula = T.let(nil, T.nilable(Formula))
           result = ""
           loop do
-            rev = rev.nil? ? "HEAD" : "#{rev}~1"
+            rev = rev.nil? ? start_rev : "#{rev}~1"
             rev, (path,) = Utils::Git.last_revision_commit_of_files(repo, pattern, before_commit: rev)
             if rev.nil? && source_tap.shallow?
               odie <<~EOS
@@ -98,14 +101,18 @@ module Homebrew
           end
           odie "Could not find #{name}! The formula or version may not have existed." if test_formula.nil?
         else
-          # Search in the root directory of `repo` as well as recursively in all of its subdirectories.
-          files = Dir[repo/"{,**/}"].filter_map do |dir|
-            Pathname.glob("#{dir}/#{name}.rb").find(&:file?)
+          # Search in the root directory of `repository` as well as recursively in all of its subdirectories.
+          files = if start_rev == "HEAD"
+            Dir[repo/"{,**/}"].filter_map do |dir|
+              Pathname.glob("#{dir}/#{name}.rb").find(&:file?)
+            end
+          else
+            []
           end
 
           if files.empty?
             ohai "Searching repository history"
-            rev, (path,) = Utils::Git.last_revision_commit_of_files(repo, pattern)
+            rev, (path,) = Utils::Git.last_revision_commit_of_files(repo, pattern, before_commit: start_rev)
             odie "Could not find #{name}! The formula or version may not have existed." if rev.nil?
             file = repo/path
             version = T.must(formula_at_revision(repo, name, file, rev)).version
@@ -122,15 +129,20 @@ module Homebrew
         # e.g. Foo version 1.2.3 becomes FooAT123 and resides in Foo@1.2.3.rb.
         class_name = Formulary.class_s(name)
 
-        # Remove any existing version suffixes, as a new one will be added later
+        # The version can only contain digits with decimals in between.
+        version_string = version.to_s
+                                .sub(/\D*(.+?)\D*$/, "\\1")
+                                .gsub(/\D+/, ".")
+
+        # Remove any existing version suffixes, as a new one will be added later.
         name.sub!(/\b@(.*)\z\b/i, "")
-        versioned_name = Formulary.class_s("#{name}@#{version}")
+        versioned_name = Formulary.class_s("#{name}@#{version_string}")
         result.sub!("class #{class_name} < Formula", "class #{versioned_name} < Formula")
 
-        # Remove bottle blocks, they won't work.
+        # Remove bottle blocks, as they won't work.
         result.sub!(BOTTLE_BLOCK_REGEX, "")
 
-        path = destination_tap.path/"Formula/#{name}@#{version.to_s.downcase}.rb"
+        path = destination_tap.path/"Formula/#{name}@#{version_string}.rb"
         if path.exist?
           unless args.force?
             odie <<~EOS
